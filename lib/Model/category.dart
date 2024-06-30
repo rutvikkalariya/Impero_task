@@ -6,7 +6,6 @@ class Category {
   final int isAuthorize;
   final int update080819;
   final int update130919;
-  final List<SubCategory> subCategories;
 
   Category({
     required this.id,
@@ -14,20 +13,15 @@ class Category {
     required this.isAuthorize,
     required this.update080819,
     required this.update130919,
-    required this.subCategories,
   });
 
   factory Category.fromJson(Map<String, dynamic> json) {
-    var subCategoryList = json['SubCategories'] as List;
-    List<SubCategory> subCategories = subCategoryList.map((i) => SubCategory.fromJson(i)).toList();
-
     return Category(
       id: json['Id'],
       name: json['Name'],
-      isAuthorize: json['IsAuthorize'],
-      update080819: json['Update080819'],
-      update130919: json['Update130919'],
-      subCategories: subCategories,
+      isAuthorize: json['IsAuthorize']?? 0,
+      update080819: json['Update080819']?? 0,
+      update130919: json['Update130919']?? 0,
     );
   }
 }

@@ -1,11 +1,12 @@
 import 'dart:convert';
-
-import 'package:flutter/cupertino.dart';
+import 'dart:developer';
 import 'package:flutter/material.dart';
-import 'package:flutter/widgets.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:http/http.dart' as http;
-
 import '../Model/category.dart';
+import '../bloc/app_bloc.dart';
+import '../bloc/app_event.dart';
+import '../bloc/app_state.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -18,6 +19,7 @@ class _HomePageState extends State<HomePage> {
   bool showLoader = true;
   List<Category> categories = [];
   List<SubCategory> subCategories = [];
+  List<SubCategory> dummySubCategories = [];
   int selectedIndex = 1;
   int ceramicId = -1;
   int subCatPage = 1;
@@ -25,44 +27,56 @@ class _HomePageState extends State<HomePage> {
   bool isLast = false;
   ScrollController subCatController = ScrollController();
   bool isLoading = false;
+  final AppBloc _appBloc = AppBloc();
+  BuildContext? _progressContext;
 
   @override
   void initState() {
     subCatController.addListener(_scrollListener);
     initApiCall();
+
     super.initState();
+  }
+
+  fetchcategoryList() {
+    _appBloc.add(
+        fetchCategoriesEvent(0, 'Google', 'Android SDK built for x86', '', 1));
+  }
+
+  fetchSubcategoryList(int ceramicId, subCatPage) {
+    _appBloc.add(
+        fetchSubCategoriesEvent(ceramicId, subCatPage));
+  }
+
+  fetchProductList(int subCategoryIdd, int productPagee) {
+    _appBloc.add(
+        fetchProductsEvent(subCategoryIdd, productPagee));
   }
 
   void _scrollListener() {
     if (subCatController.position.pixels ==
-            subCatController.position.maxScrollExtent &&
+        subCatController.position.maxScrollExtent &&
         !isLast) {
       if (!isLoading) {
-        fetchSubCategory();
+        fetchSubcategoryList(ceramicId,subCatPage);
       }
     }
   }
 
   initApiCall() async {
-    await fetchData();
+    await fetchcategoryList();
     showLoader = false;
     selectedIndex = 1;
     setState(() {});
   }
 
-  Future<void> fetchSubCategory() async {
-    isLoading = true;
-    setState(() {});
-    List<SubCategory> temp = await fetchSubCategories(ceramicId, subCatPage);
-    await getProduct(temp);
-  }
-
   getProduct(List<SubCategory> temp) {
     List<SubCategory> temp1 = temp;
     temp1.forEach((element) async {
-      List<Product> products = await fetchProducts(productPage, element.id);
-      debugPrint("products::${products.length}");
-      element.products.addAll(products);
+      List<Product> productsList = await fetchProducts(productPage,element.id, );
+      log("Awaited");
+      debugPrint("products::${productsList.length}");
+      element.products.addAll(productsList);
       element.productsPage = productPage; // Initialize product page index for each subcategory
       element.isProductsLastPage = false; // Initialize the flag for last page
       element.productController = ScrollController();
@@ -73,9 +87,15 @@ class _HomePageState extends State<HomePage> {
 
     subCategories.addAll(temp1);
 
+    if (subCategories.isNotEmpty) {
+      subCatPage = subCatPage + 1;
+    } else {
+      isLast = true;
+    }
+
     Future.delayed(
-      const Duration(seconds: 3),
-      () {
+      const Duration(seconds: 1),
+          () {
         isLoading = false;
         setState(() {});
       },
@@ -125,119 +145,6 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  fetchData() async {
-    List<Category> fetchedCategories = await fetchCategories();
-    setState(() {
-      categories = fetchedCategories;
-    });
-    for (var element in fetchedCategories) {
-      if (element.name.toLowerCase() == 'ceramic') {
-        ceramicId = element.id;
-        break;
-      }
-    }
-
-    if (ceramicId != -1) {
-      await fetchSubCategory();
-    }
-  }
-
-  Future<List<Category>> fetchCategories() async {
-    String apiUrl = 'http://esptiles.imperoserver.in/api/API/Product/DashBoard';
-    Map<String, dynamic> requestParams = {
-      "CategoryId": 0,
-      "DeviceManufacturer": "Google",
-      "DeviceModel": "Android SDK built for x86",
-      "DeviceToken": " ",
-      "PageIndex": 1,
-    };
-    String requestBody = jsonEncode(requestParams);
-
-    try {
-      var response = await http.post(
-        Uri.parse(apiUrl),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8',
-        },
-        body: requestBody,
-      );
-
-      if (response.statusCode == 200) {
-        var jsonResponse = jsonDecode(response.body);
-
-        // Extract list of categories
-        List<Category> categories = [];
-        var categoryList = jsonResponse['Result']['Category'] as List;
-        categoryList.forEach((categoryJson) {
-          categories.add(Category(
-            id: categoryJson['Id'],
-            name: categoryJson['Name'],
-            isAuthorize: categoryJson['IsAuthorize'] ?? 0,
-            update080819: categoryJson['Update080819'] ?? 0,
-            update130919: categoryJson['Update130919'] ?? 0,
-            subCategories: [],
-          ));
-        });
-
-        return categories;
-      } else {
-        print('Request failed with status: ${response.statusCode}.');
-        return [];
-      }
-    } catch (e) {
-      return [];
-    }
-  }
-
-  Future<List<SubCategory>> fetchSubCategories(
-      int categoryId, int pageIndex) async {
-    String apiUrl = 'http://esptiles.imperoserver.in/api/API/Product/DashBoard';
-    Map<String, dynamic> requestParams = {
-      "CategoryId": categoryId,
-      "PageIndex": pageIndex,
-    };
-
-    String requestBody = jsonEncode(requestParams);
-
-    var response = await http.post(
-      Uri.parse(apiUrl),
-      headers: <String, String>{
-        'Content-Type': 'application/json; charset=UTF-8',
-      },
-      body: requestBody,
-    );
-
-    if (response.statusCode == 200) {
-      var jsonResponse = jsonDecode(response.body);
-
-      List<SubCategory> subCategories = [];
-      var categoryList = jsonResponse['Result']['Category'] as List;
-      categoryList.forEach((categoryJson) {
-        if (categoryJson['SubCategories'] != null) {
-          var subCategoryList = categoryJson['SubCategories'] as List;
-          subCategoryList.forEach((subCategoryJson) {
-            subCategories.add(SubCategory(
-                id: subCategoryJson['Id'],
-                name: subCategoryJson['Name'],
-                products: []));
-          });
-        }
-      });
-
-      if (subCategories.isNotEmpty) {
-        subCatPage = subCatPage + 1;
-      } else {
-        isLast = true;
-      }
-
-      return subCategories;
-    } else {
-      // Handle errors
-      print('Request failed with status: ${response.statusCode}.');
-      return [];
-    }
-  }
-
   void _productScrollListener(SubCategory subCategory) {
     if (subCategory.productController!.position.pixels ==
         subCategory.productController!.position.maxScrollExtent &&
@@ -264,92 +171,129 @@ class _HomePageState extends State<HomePage> {
     debugPrint("isLoading s:$isLoading");
     setState(() {});
   }
+
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        actions: const [
-          Icon(
-            Icons.sort,
-            color: Colors.white,
-            size: 24,
+    return BlocConsumer(
+      bloc: _appBloc,
+      listener: (context, state) async {
+        if (state is FetchCategoriesSuccessState) {
+          hideProgressDialog();
+          categories = state.categoryList;
+          for (var element in categories) {
+            if (element.name.toLowerCase() == 'ceramic') {
+              ceramicId = element.id;
+              break;
+            }
+          }
+          if (ceramicId != -1) {
+            await fetchSubcategoryList(ceramicId, subCatPage);
+          }
+
+          log("categories: ${categories.length}");
+          log("success");
+        } else if (state is FetchCategoriesFailureState) {
+          hideProgressDialog();
+          log("fail");
+        } else if (state is FetchSubCategoriesSuccessState) {
+          hideProgressDialog();
+          dummySubCategories.addAll(state.subCategoryList);
+          getProduct(dummySubCategories);
+          log("dummySubCategories: ${dummySubCategories.length}");
+        } else if (state is FetchSubCategoriesFailureState) {
+          hideProgressDialog();
+          log("fail");
+        } else if (state is FetchProductsSuccessState) {
+          hideProgressDialog();
+          // productsList = state.productsList;
+          // log("productsList${productsList.length}");
+        } else if (state is FetchProductsFailureState) {
+          hideProgressDialog();
+          log("fail");
+        }
+        else if (state is LoadingState) {
+          showProgressbarDialog(context);
+        }
+      },
+      builder: (context, state) {
+        return  Scaffold(
+          appBar: AppBar(
+            backgroundColor: Colors.black,
+            actions: const [
+              Icon(
+                Icons.sort,
+                color: Colors.white,
+                size: 24,
+              ),
+              SizedBox(
+                width: 16,
+              ),
+              Icon(
+                Icons.search,
+                color: Colors.white,
+                size: 24,
+              ),
+              SizedBox(
+                width: 16,
+              ),
+            ],
+            title: const Text(
+              "ESP TILES",
+              style: TextStyle(color: Colors.white),
+            ),
+            centerTitle: true,
           ),
-          SizedBox(
-            width: 16,
-          ),
-          Icon(
-            Icons.search,
-            color: Colors.white,
-            size: 24,
-          ),
-          SizedBox(
-            width: 16,
-          ),
-        ],
-        title: const Text(
-          "ESP TILES",
-          style: TextStyle(color: Colors.white),
-        ),
-        centerTitle: true,
-      ),
-      body: buildBody(),
+          body: buildBody(),
+        );
+      },
+
     );
   }
 
   buildBody() {
-    return showLoader
-        ? const Center(
-            child: SizedBox(
-              height: 50,
-              width: 50,
-              child: CircularProgressIndicator(
-                color: Colors.black,
-                strokeWidth: 5,
-              ),
-            ),
-          )
-        : SingleChildScrollView(
-            child: Column(
-              children: [
-                Container(
-                  color: Colors.black,
-                  height: 55,
-                  child: ListView.separated(
-                      shrinkWrap: true,
-                      scrollDirection: Axis.horizontal,
-                      itemBuilder: (context, index) {
-                        return GestureDetector(
-                          onTap: () {
-                            selectedIndex = index;
-                            setState(() {});
-                          },
-                          child: Container(
-                            alignment: Alignment.bottomCenter,
-                            padding: const EdgeInsets.all(16),
-                            child: Text(
-                              categories[index].name,
-                              style: TextStyle(
-                                  color: selectedIndex == index
-                                      ? Colors.white
-                                      : Colors.white.withOpacity(0.4),
-                                  fontSize: selectedIndex == index ? 16 : 12,
-                                  fontWeight: FontWeight.w600),
-                            ),
-                          ),
-                        );
+    return
+      SingleChildScrollView(
+        child: Column(
+          children: [
+            Container(
+              color: Colors.black,
+              height: 55,
+              child: ListView.separated(
+                  shrinkWrap: true,
+                  scrollDirection: Axis.horizontal,
+                  itemBuilder: (context, index) {
+                    return GestureDetector(
+                      onTap: () {
+                        selectedIndex = index;
+                        setState(() {});
                       },
-                      separatorBuilder: (context, index) {
-                        return const SizedBox(
-                          width: 10,
-                        );
-                      },
-                      itemCount: categories.length),
-                ),
-                selectedIndex == 1 ? ceramicView() : noDataFoundView()
-              ],
+                      child: Container(
+                        alignment: Alignment.bottomCenter,
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          categories[index].name,
+                          style: TextStyle(
+                              color: selectedIndex == index
+                                  ? Colors.white
+                                  : Colors.white.withOpacity(0.4),
+                              fontSize: selectedIndex == index ? 16 : 12,
+                              fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    );
+                  },
+                  separatorBuilder: (context, index) {
+                    return const SizedBox(
+                      width: 10,
+                    );
+                  },
+                  itemCount: categories.length),
             ),
-          );
+            selectedIndex == 1 ? ceramicView() : noDataFoundView()
+          ],
+        ),
+      );
   }
 
   ceramicView() {
@@ -374,13 +318,13 @@ class _HomePageState extends State<HomePage> {
         ),
         isLoading
             ? const SizedBox(
-                height: 50,
-                width: 50,
-                child: CircularProgressIndicator(
-                  color: Colors.black,
-                  strokeWidth: 5,
-                ),
-              )
+          height: 50,
+          width: 50,
+          child: CircularProgressIndicator(
+            color: Colors.black,
+            strokeWidth: 5,
+          ),
+        )
             : Container(),
       ],
     );
@@ -433,13 +377,13 @@ class _HomePageState extends State<HomePage> {
                                   return Center(
                                     child: CircularProgressIndicator(
                                       value:
-                                          loadingProgress.expectedTotalBytes !=
-                                                  null
-                                              ? loadingProgress
-                                                      .cumulativeBytesLoaded /
-                                                  loadingProgress
-                                                      .expectedTotalBytes!
-                                              : null,
+                                      loadingProgress.expectedTotalBytes !=
+                                          null
+                                          ? loadingProgress
+                                          .cumulativeBytesLoaded /
+                                          loadingProgress
+                                              .expectedTotalBytes!
+                                          : null,
                                       color: Colors.black,
                                     ),
                                   );
@@ -513,6 +457,70 @@ class _HomePageState extends State<HomePage> {
         style: TextStyle(
             color: Colors.black, fontSize: 26, fontWeight: FontWeight.w600),
       ),
+    );
+  }
+
+
+  void hideProgressDialog() {
+    if (_progressContext != null) {
+      Navigator.of(_progressContext!).pop(true);
+      _progressContext = null;
+    }
+  }
+
+  void showProgressbarDialog(BuildContext context,
+      {Color? loaderColor, String? text}) {
+    if (_progressContext == null) {
+      displayProgressDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (con) {
+            _progressContext = con;
+            return WillPopScope(
+                onWillPop: () async => false,
+                child: const Center(
+                  child: SizedBox(
+                    height: 50,
+                    width: 50,
+                    child: CircularProgressIndicator(
+                      color: Colors.black,
+                      strokeWidth: 5,
+                    ),
+                  ),
+                ));
+          });
+    }
+  }
+
+  Future<T?>? displayProgressDialog<T>(
+      {@required BuildContext? context,
+        bool barrierDismissible = true,
+        Widget? child,
+        WidgetBuilder? builder,
+        bool useRootNavigator = true}) {
+    assert(child == null || builder == null);
+    assert(useRootNavigator != null);
+    assert(debugCheckHasMaterialLocalizations(context!));
+
+    final ThemeData theme = Theme.of(context!);
+    return showGeneralDialog(
+      context: context,
+      barrierDismissible: barrierDismissible,
+      pageBuilder: (BuildContext? buildContext, Animation<double>? animation,
+          Animation<double>? secondaryAnimation) {
+        final Widget pageChild = child ?? Builder(builder: builder!);
+        return SafeArea(
+          child: Builder(builder: (BuildContext context) {
+            return theme != null
+                ? Theme(data: theme, child: pageChild)
+                : pageChild;
+          }),
+        );
+      },
+      useRootNavigator: useRootNavigator,
+      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+      barrierColor: Colors.black12.withOpacity(0.6),
+      transitionDuration: const Duration(seconds: 1),
     );
   }
 }
